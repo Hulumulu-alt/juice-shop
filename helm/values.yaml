@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: nazyvaevdocker/juice-shop
-  tag: replaceJuiceTag
+  tag: 4
   pullPolicy: IfNotPresent
 
 service:
