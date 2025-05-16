@@ -1,0 +1,21 @@
+replicaCount: 1
+
+image:
+  repository: nazyvaevdocker/juice-shop
+  tag: replaceJuiceTag
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  hosts:
+    - host: juice-shop.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
