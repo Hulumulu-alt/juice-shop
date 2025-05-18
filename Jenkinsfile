@@ -20,9 +20,11 @@ pipeline {
             steps {
                 withSonarQubeEnv("${SONARQUBE_SERVER}") {
                     sh '''
-                        echo "[INFO] Installing dependencies..."
-                        npm install || true
-                        echo "[INFO] Starting SonarQube scan"
+                        set -e
+                        echo "[INFO] Installing dependencies with legacy peer deps"
+                        npm install --legacy-peer-deps || true
+
+                        echo "[INFO] Starting SonarQube scan..."
                         npx sonar-scanner \
                           -Dsonar.projectKey=juice-shop \
                           -Dsonar.sources=. \
@@ -35,7 +37,10 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $IMAGE_NAME:$IMAGE_TAG .'
+                sh '''
+                    echo "[INFO] Building Docker image..."
+                    docker build -t $IMAGE_NAME:$IMAGE_TAG .
+                '''
             }
         }
 
@@ -60,8 +65,10 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
                     sh '''
+                        echo "[INFO] Configuring git and updating Helm values..."
                         git config --global user.email "nazivaevaleksey8983@gmail.com"
                         git config --global user.name "Hulumulu-alt"
+
                         if [ -f helm/values.yaml ]; then
                             sed -i "s/replaceJuiceTag/${BUILD_NUMBER}/g" helm/values.yaml
                             git add helm/values.yaml
@@ -79,6 +86,7 @@ pipeline {
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
+                        echo "[INFO] Deploying to Minikube with Helm..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
                         helm upgrade --install juice-shop . --namespace default'
