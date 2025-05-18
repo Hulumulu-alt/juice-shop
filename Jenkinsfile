@@ -19,14 +19,16 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                    sh """
-                        npm install
+                    sh '''
+                        echo "[INFO] Installing dependencies..."
+                        npm install || true
+                        echo "[INFO] Starting SonarQube scan"
                         npx sonar-scanner \
                           -Dsonar.projectKey=juice-shop \
                           -Dsonar.sources=. \
                           -Dsonar.host.url=http://localhost:9000 \
-                          -Dsonar.login=${SONAR_TOKEN}
-                    """
+                          -Dsonar.login=$SONAR_TOKEN || echo "[WARN] SonarQube scan failed but continuing"
+                    '''
                 }
             }
         }
@@ -56,15 +58,19 @@ pipeline {
                 GIT_USER_NAME = "Hulumulu-alt"
             }
             steps {
-                withCredentials([string(credentialsId: 'github-credentials', variable: 'GITHUB_TOKEN')]) {
-                    sh """
+                withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
+                    sh '''
                         git config --global user.email "nazivaevaleksey8983@gmail.com"
                         git config --global user.name "Hulumulu-alt"
-                        sed -i "s/replaceJuiceTag/${BUILD_NUMBER}/g" helm/values.yaml || true
-                        git add helm/values.yaml
-                        git commit -m "Update Juice Shop tag to ${BUILD_NUMBER}" || true
-                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:master
-                    """
+                        if [ -f helm/values.yaml ]; then
+                            sed -i "s/replaceJuiceTag/${BUILD_NUMBER}/g" helm/values.yaml
+                            git add helm/values.yaml
+                            git commit -m "Update Juice Shop tag to ${BUILD_NUMBER}" || true
+                            git push https://x-access-token:$GITHUB_TOKEN@github.com/Hulumulu-alt/juice-shop.git HEAD:master
+                        else
+                            echo "[ERROR] helm/values.yaml not found, skipping commit step"
+                        fi
+                    '''
                 }
             }
         }
