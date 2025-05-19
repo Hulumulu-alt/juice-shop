@@ -20,16 +20,15 @@ pipeline {
             steps {
                 withSonarQubeEnv("${SONARQUBE_SERVER}") {
                     sh '''
-                        set -e
-                        echo "[INFO] Installing dependencies with legacy peer deps"
-                        npm install --legacy-peer-deps || true
+                        echo "[INFO] Установка зависимостей с поддержкой legacy peer deps..."
+                        npm ci --legacy-peer-deps || npm install --legacy-peer-deps || true
 
-                        echo "[INFO] Starting SonarQube scan..."
+                        echo "[INFO] Запуск SonarQube-анализа..."
                         npx sonar-scanner \
                           -Dsonar.projectKey=juice-shop \
                           -Dsonar.sources=. \
                           -Dsonar.host.url=http://localhost:9000 \
-                          -Dsonar.login=$SONAR_TOKEN || echo "[WARN] SonarQube scan failed but continuing"
+                          -Dsonar.login=$SONAR_TOKEN || echo "[WARN] Анализ SonarQube не прошёл, продолжаем"
                     '''
                 }
             }
@@ -38,7 +37,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh '''
-                    echo "[INFO] Building Docker image..."
+                    echo "[INFO] Сборка Docker-образа..."
                     docker build -t $IMAGE_NAME:$IMAGE_TAG .
                 '''
             }
@@ -65,7 +64,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        echo "[INFO] Configuring git and updating Helm values..."
+                        echo "[INFO] Настройка Git и обновление Helm values..."
                         git config --global user.email "nazivaevaleksey8983@gmail.com"
                         git config --global user.name "Hulumulu-alt"
 
@@ -73,9 +72,9 @@ pipeline {
                             sed -i "s/replaceJuiceTag/${BUILD_NUMBER}/g" helm/values.yaml
                             git add helm/values.yaml
                             git commit -m "Update Juice Shop tag to ${BUILD_NUMBER}" || true
-                            git push https://x-access-token:$GITHUB_TOKEN@github.com/Hulumulu-alt/juice-shop.git HEAD:master
+                            git push https://x-access-token:$GITHUB_TOKEN@github.com/$GIT_USER_NAME/$GIT_REPO_NAME.git HEAD:master
                         else
-                            echo "[ERROR] helm/values.yaml not found, skipping commit step"
+                            echo "[ERROR] Файл helm/values.yaml не найден, пропускаем шаг коммита"
                         fi
                     '''
                 }
@@ -86,10 +85,10 @@ pipeline {
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
-                        echo "[INFO] Deploying to Minikube with Helm..."
+                        echo "[INFO] Развёртывание Helm-чарта в Minikube..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . --namespace default'
+                        helm upgrade --install juice-shop . --namespace default --create-namespace'
                     '''
                 }
             }
