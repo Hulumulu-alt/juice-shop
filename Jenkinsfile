@@ -21,14 +21,14 @@ pipeline {
                 withSonarQubeEnv("${SONARQUBE_SERVER}") {
                     sh '''
                         echo "[INFO] Установка зависимостей с поддержкой legacy peer deps..."
-                        npm ci --legacy-peer-deps || npm install --legacy-peer-deps || true
+                        npm install --legacy-peer-deps || true
 
                         echo "[INFO] Запуск SonarQube-анализа..."
                         npx sonar-scanner \
                           -Dsonar.projectKey=juice-shop \
                           -Dsonar.sources=. \
                           -Dsonar.host.url=http://localhost:9000 \
-                          -Dsonar.login=$SONAR_TOKEN || echo "[WARN] Анализ SonarQube не прошёл, продолжаем"
+                          -Dsonar.token=$SONAR_TOKEN || echo "[WARN] SonarQube анализ не прошёл, продолжаем"
                     '''
                 }
             }
@@ -64,7 +64,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        echo "[INFO] Настройка Git и обновление Helm values..."
+                        echo "[INFO] Обновление Helm-значений..."
                         git config --global user.email "nazivaevaleksey8983@gmail.com"
                         git config --global user.name "Hulumulu-alt"
 
@@ -74,7 +74,7 @@ pipeline {
                             git commit -m "Update Juice Shop tag to ${BUILD_NUMBER}" || true
                             git push https://x-access-token:$GITHUB_TOKEN@github.com/$GIT_USER_NAME/$GIT_REPO_NAME.git HEAD:master
                         else
-                            echo "[ERROR] Файл helm/values.yaml не найден, пропускаем шаг коммита"
+                            echo "[WARN] helm/values.yaml не найден, шаг пропущен"
                         fi
                     '''
                 }
@@ -85,14 +85,10 @@ pipeline {
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
-                        echo "[INFO] Развёртывание Helm-чарта в Minikube..."
+                        echo "[INFO] Развёртывание приложения через Helm..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                            if [ ! -d ~/juice-shop ]; then
-                                git clone https://github.com/Hulumulu-alt/juice-shop.git ~/juice-shop
-                            fi &&
-                            cd ~/juice-shop/helm &&
-                            helm upgrade --install juice-shop . --namespace default --create-namespace
-                        '
+                        cd ~/juice-shop/helm &&
+                        helm upgrade --install juice-shop . --namespace default --create-namespace'
                     '''
                 }
             }
