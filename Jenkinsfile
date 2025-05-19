@@ -87,8 +87,12 @@ pipeline {
                     sh '''
                         echo "[INFO] Развёртывание Helm-чарта в Minikube..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                        cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . --namespace default --create-namespace'
+                            if [ ! -d ~/juice-shop ]; then
+                                git clone https://github.com/Hulumulu-alt/juice-shop.git ~/juice-shop
+                            fi &&
+                            cd ~/juice-shop/helm &&
+                            helm upgrade --install juice-shop . --namespace default --create-namespace
+                        '
                     '''
                 }
             }
