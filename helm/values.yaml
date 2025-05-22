@@ -17,5 +17,8 @@ ingress:
     - host: juice-shop.local
       paths:
         - path: /
+    - host: 192.168.56.102.nip.io
+      paths:
+       - path: /
           pathType: Prefix
   tls: []
