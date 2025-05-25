@@ -96,5 +96,19 @@ pipeline {
                 }
             }
         }
+
+        stage('OWASP ZAP Scan') {
+            steps {
+                sshagent(credentials: ['minikube-ssh']) {
+                    sh '''
+                        echo "[INFO] Запуск сканирования OWASP ZAP..."
+                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.101 '
+                        cd ~/zap-scan &&
+                        chmod +x zap-scan.sh &&
+                        ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"'
+                    '''
+                }
+            }
+        }
     }
 }
