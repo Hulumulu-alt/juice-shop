@@ -22,7 +22,7 @@ pipeline {
                     withSonarQubeEnv("${SONARQUBE_SERVER}") {
                         sh '''
                             echo "[INFO] Установка зависимостей..."
-                            npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+                            npm install --legacy-peer-deps
 
                             echo "[INFO] Запуск анализа SonarQube..."
                             npx sonar-scanner \
@@ -99,15 +99,12 @@ pipeline {
 
         stage('OWASP ZAP Scan') {
             steps {
-                sshagent(credentials: ['minikube-ssh']) {
-                    sh '''
-                        echo "[INFO] Запуск сканирования OWASP ZAP..."
-                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.101 '
-                        cd ~/zap-scan &&
-                        chmod +x zap-scan.sh &&
-                        ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"'
-                    '''
-                }
+                sh '''
+                    echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
+                    cd ~/zap-scan
+                    chmod +x zap-scan.sh
+                    ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"
+                '''
             }
         }
     }
