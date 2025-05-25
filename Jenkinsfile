@@ -107,5 +107,14 @@ pipeline {
                 '''
             }
         }
+
+        post {
+            always {
+                echo '[INFO] Архивация ZAP-отчетов...'
+                archiveArtifacts artifacts: 'zap-scan/reports/zap_report.html', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'zap-scan/reports/zap-report.xml', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'zap-scan/reports/zap-report.json', allowEmptyArchive: true
+            }
+        }
     }
 }
