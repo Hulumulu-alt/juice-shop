@@ -104,6 +104,12 @@ pipeline {
                     cd /var/lib/jenkins/zap-scan
                     chmod +x zap-scan.sh
                     ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"
+
+                    echo "[INFO] Копирование ZAP-отчетов в рабочую директорию Jenkins..."
+                    mkdir -p ${WORKSPACE}/zap-report
+                    cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+                    cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+                    cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
                 '''
             }
         }
@@ -112,9 +118,9 @@ pipeline {
     post {
         always {
             echo '[INFO] Архивация ZAP-отчетов...'
-            archiveArtifacts artifacts: 'zap-scan/reports/zap_report.html', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'zap-scan/reports/zap-report.xml', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'zap-scan/reports/zap-report.json', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'zap-report/zap_report.html', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'zap-report/zap-report.xml', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'zap-report/zap-report.json', allowEmptyArchive: true
         }
     }
 }
