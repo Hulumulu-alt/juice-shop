@@ -101,7 +101,7 @@ pipeline {
             steps {
                 sh '''
                     echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
-                    cd ~/zap-scan
+                    cd /var/lib/jenkins/zap-scan
                     chmod +x zap-scan.sh
                     ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"
                 '''
