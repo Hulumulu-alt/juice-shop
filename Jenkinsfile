@@ -113,6 +113,24 @@ pipeline {
                 '''
             }
         }
+
+        stage('Upload to DefectDojo') {
+            environment {
+                DEFECTDOJO_TOKEN = credentials('defectdojo-token')
+            }
+            steps {
+                sh '''
+                    echo "[INFO] Отправка отчета OWASP ZAP в DefectDojo..."
+                    curl -X POST http://localhost:8085/api/v2/import-scan/ \
+                      -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+                      -F "scan_type=ZAP Scan" \
+                      -F "minimum_severity=Low" \
+                      -F "engagement=1" \
+                      -F "lead=1" \
+                      -F "file=@zap-report/zap-report.xml"
+                '''
+            }
+        }
     }
 
     post {
