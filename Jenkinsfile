@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME = 'nazyvaevdocker/juice-shop'
         IMAGE_TAG = "${BUILD_NUMBER}"
         TELEGRAM_TOKEN = credentials('telegram-token')
-        TELEGRAM_CHAT_ID = '<ВАШ_CHAT_ID>' // Укажи вручную
+        TELEGRAM_CHAT_ID = credentials('telegram-chat-id')
     }
 
     stages {
@@ -23,25 +23,21 @@ pipeline {
                 script {
                     withSonarQubeEnv("${SONARQUBE_SERVER}") {
                         sh '''
-                            echo "[INFO] Установка зависимостей..."
                             npm install --legacy-peer-deps
-
-                            echo "[INFO] Запуск анализа SonarQube..."
                             npx sonar-scanner \
-                                -Dsonar.projectKey=juice-shop \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=http://localhost:9000 \
-                                -Dsonar.login=${SONAR_TOKEN}
+                              -Dsonar.projectKey=juice-shop \
+                              -Dsonar.sources=. \
+                              -Dsonar.host.url=http://localhost:9000 \
+                              -Dsonar.login=${SONAR_TOKEN}
                         '''
                     }
                 }
             }
         }
 
-        stage('Build Juice Shop Image') {
+        stage('Build Docker Image') {
             steps {
                 sh '''
-                    echo "[INFO] Сборка Docker-образа Juice Shop..."
                     docker build -t $IMAGE_NAME:$IMAGE_TAG .
                 '''
             }
@@ -72,12 +68,9 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        echo "[INFO] Обновление тега в Helm values.yaml..."
                         git config user.email "nazivaevaleksey8983@gmail.com"
                         git config user.name "Hulumulu-alt"
-
                         sed -i "s/replaceJuiceTag/${BUILD_NUMBER}/g" helm/values.yaml || true
-
                         git add helm/values.yaml
                         git commit -m "Обновление тега Docker-образа на ${BUILD_NUMBER}" || true
                         git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:master
@@ -86,55 +79,42 @@ pipeline {
             }
         }
 
-        stage('OWASP ZAP Scan') {
-            steps {
-                sh '''
-                    echo "[INFO] Запуск сканирования OWASP ZAP..."
-                    cd /var/lib/jenkins/zap-scan
-                    chmod +x zap-scan.sh
-                    ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"
-
-                    echo "[INFO] Копирование отчетов ZAP..."
-                    mkdir -p ${WORKSPACE}/zap-report
-                    cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-                    cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-                    cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
-                '''
-            }
-        }
-
-        stage('Check for High Vulnerabilities') {
-            steps {
-                script {
-                    def foundHigh = sh (
-                        script: "grep -qi '<severity>High</severity>' zap-report/zap-report.xml",
-                        returnStatus: true
-                    ) == 0
-
-                    if (foundHigh) {
-                        echo '[ERROR] Найдены уязвимости уровня High!'
-                        sh '''
-                            curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
-                              -d chat_id=${TELEGRAM_CHAT_ID} \
-                              -d text="❗ Найдены уязвимости HIGH. Развёртывание Juice Shop остановлено." || true
-                        '''
-                        error("High severity vulnerabilities found. Aborting pipeline.")
-                    } else {
-                        echo '[INFO] Уязвимостей уровня High не обнаружено.'
-                    }
-                }
-            }
-        }
-
         stage('Deploy to Minikube') {
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
-                        echo "[INFO] Деплой в кластер Minikube..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
                         helm upgrade --install juice-shop . --namespace default --create-namespace'
                     '''
+                }
+            }
+        }
+
+        stage('OWASP ZAP Scan') {
+            steps {
+                sh '''
+                    cd /var/lib/jenkins/zap-scan
+                    chmod +x zap-scan.sh
+                    ./zap-scan.sh || true
+                    mkdir -p ${WORKSPACE}/zap-report
+                    cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+                '''
+            }
+        }
+
+        stage('Analyze ZAP Report') {
+            steps {
+                script {
+                    def zapXml = readFile(file: 'zap-report/zap-report.xml')
+                    if (zapXml.contains('riskcode="3"')) {
+                        sh '''
+                            curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
+                            -d chat_id=${TELEGRAM_CHAT_ID} \
+                            -d text="‼ Найдены уязвимости HIGH уровня в Juice Shop. Деплой остановлен."
+                        '''
+                        error("HIGH-уязвимости найдены. Прерывание пайплайна.")
+                    }
                 }
             }
         }
@@ -145,7 +125,6 @@ pipeline {
             }
             steps {
                 sh '''
-                    echo "[INFO] Отправка отчета OWASP ZAP в DefectDojo..."
                     curl -X POST http://localhost:8085/api/v2/import-scan/ \
                       -H "Authorization: Token $DEFECTDOJO_TOKEN" \
                       -F "scan_type=ZAP Scan" \
@@ -160,10 +139,10 @@ pipeline {
 
     post {
         always {
-            echo '[INFO] Архивация ZAP-отчетов...'
-            archiveArtifacts artifacts: 'zap-report/zap_report.html', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'zap-report/zap-report.xml', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'zap-report/zap-report.json', allowEmptyArchive: true
+            node {
+                echo '[INFO] Архивация ZAP-отчетов...'
+                archiveArtifacts artifacts: 'zap-report/*.xml', allowEmptyArchive: true
+            }
         }
     }
 }
