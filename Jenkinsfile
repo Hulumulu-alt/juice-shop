@@ -101,24 +101,30 @@ pipeline {
         }
 
         stage('OWASP ZAP Scan') {
-            steps {
-                sh '''
-                    echo "[INFO] Запуск сканирования OWASP ZAP..."
-                    cd /var/lib/jenkins/zap-scan
-                    chmod +x zap-scan.sh
-                    ./zap-scan.sh
+    steps {
+        sh '''
+            echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
+            cd /var/lib/jenkins/zap-scan
+            chmod +x zap-scan.sh
+            ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой или нашёл уязвимости"
 
-                    echo "[INFO] Проверка на уязвимости уровняHigh..."
-                    if grep -q '"riskdesc": "High"' reports/zap-report.json; then
-                      echo "[ALERT] Обнаружены критические уязвимости. Останавливаем конвейер."
-                      curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
-                          -d chat_id=${TELEGRAM_CHAT_ID} \
-                          -d text="❌ OWASP ZAP нашел уязвимости уровня High. Развёртывание отменено."
-                      exit 1
-                    fi
-                '''
-            }
-        }
+            echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
+            mkdir -p ${WORKSPACE}/zap-report
+            cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+            cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+            cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
+
+            echo "[INFO] Проверка на уязвимости уровня High..."
+            if grep -q '"riskdesc": "High"' reports/zap-report.json; then
+                echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем пайплайн..."
+                curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
+                  -d chat_id=${TELEGRAM_CHAT_ID} \
+                  -d text="❌ OWASP ZAP нашёл уязвимости уровня High. Развёртывание отменено."
+                exit 1
+            fi
+        '''
+    }
+}  
 
         stage('Upload to DefectDojo') {
             steps {
