@@ -99,18 +99,31 @@ pipeline {
 
         stage('OWASP ZAP Scan') {
             steps {
-                sh '''
-                    echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
-                    cd /var/lib/jenkins/zap-scan
-                    chmod +x zap-scan.sh
-                    ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"
-
-                    echo "[INFO] Копирование ZAP-отчетов в рабочую директорию Jenkins..."
-                    mkdir -p ${WORKSPACE}/zap-report
-                    cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-                    cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-                    cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
-                '''
+                script {
+                    def scanStatus = sh (
+                        script: '''
+                            echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
+                            cd /var/lib/jenkins/zap-scan
+                            chmod +x zap-scan.sh
+                            ./zap-scan.sh
+                        ''',
+                        returnStatus: true
+                    )
+                    if (scanStatus != 0) {
+                        echo "[WARN] ZAP обнаружил уязвимости или произошла ошибка. Останавливаем деплой."
+                        withCredentials([
+                            string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN'),
+                            string(credentialsId: 'telegram-chat-id', variable: 'CHAT_ID')
+                        ]) {
+                            sh '''
+                                curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                                    -d chat_id=$CHAT_ID \
+                                    -d text="[ALERT] Jenkins: Обнаружены уязвимости в Juice Shop. Деплой остановлен."
+                            '''
+                        }
+                        error("ZAP обнаружил уязвимости — пайплайн остановлен.")
+                    }
+                }
             }
         }
 
