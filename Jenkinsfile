@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME = 'nazyvaevdocker/juice-shop'
         IMAGE_TAG = "${BUILD_NUMBER}"
         TELEGRAM_TOKEN = credentials('telegram-token')
-        TELEGRAM_CHAT_ID = credentials('telegram-chat-id')
+        TELEGRAM_CHAT_ID = '<ВАШ_CHAT_ID>' // Укажи вручную
     }
 
     stages {
@@ -103,13 +103,49 @@ pipeline {
             }
         }
 
+        stage('Check for High Vulnerabilities') {
+            steps {
+                script {
+                    def foundHigh = sh (
+                        script: "grep -qi '<severity>High</severity>' zap-report/zap-report.xml",
+                        returnStatus: true
+                    ) == 0
+
+                    if (foundHigh) {
+                        echo '[ERROR] Найдены уязвимости уровня High!'
+                        sh '''
+                            curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
+                              -d chat_id=${TELEGRAM_CHAT_ID} \
+                              -d text="❗ Найдены уязвимости HIGH. Развёртывание Juice Shop остановлено." || true
+                        '''
+                        error("High severity vulnerabilities found. Aborting pipeline.")
+                    } else {
+                        echo '[INFO] Уязвимостей уровня High не обнаружено.'
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Minikube') {
+            steps {
+                sshagent(credentials: ['minikube-ssh']) {
+                    sh '''
+                        echo "[INFO] Деплой в кластер Minikube..."
+                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                        cd ~/juice-shop/helm &&
+                        helm upgrade --install juice-shop . --namespace default --create-namespace'
+                    '''
+                }
+            }
+        }
+
         stage('Upload to DefectDojo') {
             environment {
                 DEFECTDOJO_TOKEN = credentials('defectdojo-token')
             }
             steps {
                 sh '''
-                    echo "[INFO] Отправка отчета в DefectDojo..."
+                    echo "[INFO] Отправка отчета OWASP ZAP в DefectDojo..."
                     curl -X POST http://localhost:8085/api/v2/import-scan/ \
                       -H "Authorization: Token $DEFECTDOJO_TOKEN" \
                       -F "scan_type=ZAP Scan" \
@@ -118,45 +154,6 @@ pipeline {
                       -F "lead=1" \
                       -F "file=@zap-report/zap-report.xml"
                 '''
-            }
-        }
-
-        stage('Check for Critical Vulnerabilities') {
-            steps {
-                script {
-                    def criticalFound = sh(script: "grep -q '<severity>High</severity>' zap-report/zap-report.xml && echo true || echo false", returnStdout: true).trim()
-                    if (criticalFound == "true") {
-                        echo "[ALERT] Обнаружены HIGH уязвимости. Прерывание пайплайна..."
-
-                        sh """
-                            curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \\
-                            -d chat_id=${TELEGRAM_CHAT_ID} \\
-                            -d text="‼️ Обнаружены уязвимости в Juice Shop (HIGH severity). Развёртывание отменено. Ознакомьтесь с отчётом в DefectDojo."
-                        """
-                        error("[SECURITY] Уязвимости высокого уровня. Деплой остановлен.")
-                    } else {
-                        echo "[INFO] Уязвимости не обнаружены. Продолжаем развёртывание."
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to Minikube') {
-            when {
-                expression {
-                    // Выполняется только если предыдущий шаг не завершился ошибкой
-                    currentBuild.result == null || currentBuild.result == 'SUCCESS'
-                }
-            }
-            steps {
-                sshagent(credentials: ['minikube-ssh']) {
-                    sh '''
-                        echo "[INFO] Деплой в Minikube..."
-                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                        cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . --namespace default --create-namespace'
-                    '''
-                }
             }
         }
     }
