@@ -139,10 +139,12 @@ pipeline {
 
     post {
     always {
-        echo '[INFO] Архивация ZAP-отчетов...'
-        archiveArtifacts artifacts: 'zap-report/zap_report.html', allowEmptyArchive: true
-        archiveArtifacts artifacts: 'zap-report/zap-report.xml', allowEmptyArchive: true
-        archiveArtifacts artifacts: 'zap-report/zap-report.json', allowEmptyArchive: true
-    }
-  }
+        node {
+            echo '[INFO] Архивация ZAP-отчетов...'
+            archiveArtifacts artifacts: 'zap-report/zap_report.html', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'zap-report/zap-report.xml', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'zap-report/zap-report.json', allowEmptyArchive: true
+         }
+      }
+   }
 }
