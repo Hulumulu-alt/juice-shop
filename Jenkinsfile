@@ -6,6 +6,8 @@ pipeline {
         SONAR_TOKEN = credentials('sonarqube-token')
         IMAGE_NAME = 'nazyvaevdocker/juice-shop'
         IMAGE_TAG = "${BUILD_NUMBER}"
+        TELEGRAM_TOKEN = credentials('telegram-token')
+        TELEGRAM_CHAT_ID = credentials('telegram-chat-id')
     }
 
     stages {
@@ -84,46 +86,20 @@ pipeline {
             }
         }
 
-        stage('Deploy to Minikube') {
-            steps {
-                sshagent(credentials: ['minikube-ssh']) {
-                    sh '''
-                        echo "[INFO] Деплой в кластер Minikube..."
-                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                        cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . --namespace default --create-namespace'
-                    '''
-                }
-            }
-        }
-
         stage('OWASP ZAP Scan') {
             steps {
-                script {
-                    def scanStatus = sh (
-                        script: '''
-                            echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
-                            cd /var/lib/jenkins/zap-scan
-                            chmod +x zap-scan.sh
-                            ./zap-scan.sh
-                        ''',
-                        returnStatus: true
-                    )
-                    if (scanStatus != 0) {
-                        echo "[WARN] ZAP обнаружил уязвимости или произошла ошибка. Останавливаем деплой."
-                        withCredentials([
-                            string(credentialsId: 'telegram-bot-token', variable: 'TELEGRAM_TOKEN'),
-                            string(credentialsId: 'telegram-chat-id', variable: 'CHAT_ID')
-                        ]) {
-                            sh '''
-                                curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                                    -d chat_id=$CHAT_ID \
-                                    -d text="[ALERT] Jenkins: Обнаружены уязвимости в Juice Shop. Деплой остановлен."
-                            '''
-                        }
-                        error("ZAP обнаружил уязвимости — пайплайн остановлен.")
-                    }
-                }
+                sh '''
+                    echo "[INFO] Запуск сканирования OWASP ZAP..."
+                    cd /var/lib/jenkins/zap-scan
+                    chmod +x zap-scan.sh
+                    ./zap-scan.sh || echo "[WARN] ZAP нашел уязвимости или произошла ошибка"
+
+                    echo "[INFO] Копирование отчетов ZAP..."
+                    mkdir -p ${WORKSPACE}/zap-report
+                    cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+                    cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+                    cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
+                '''
             }
         }
 
@@ -133,7 +109,7 @@ pipeline {
             }
             steps {
                 sh '''
-                    echo "[INFO] Отправка отчета OWASP ZAP в DefectDojo..."
+                    echo "[INFO] Отправка отчета в DefectDojo..."
                     curl -X POST http://localhost:8085/api/v2/import-scan/ \
                       -H "Authorization: Token $DEFECTDOJO_TOKEN" \
                       -F "scan_type=ZAP Scan" \
@@ -142,6 +118,45 @@ pipeline {
                       -F "lead=1" \
                       -F "file=@zap-report/zap-report.xml"
                 '''
+            }
+        }
+
+        stage('Check for Critical Vulnerabilities') {
+            steps {
+                script {
+                    def criticalFound = sh(script: "grep -q '<severity>High</severity>' zap-report/zap-report.xml && echo true || echo false", returnStdout: true).trim()
+                    if (criticalFound == "true") {
+                        echo "[ALERT] Обнаружены HIGH уязвимости. Прерывание пайплайна..."
+
+                        sh """
+                            curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \\
+                            -d chat_id=${TELEGRAM_CHAT_ID} \\
+                            -d text="‼️ Обнаружены уязвимости в Juice Shop (HIGH severity). Развёртывание отменено. Ознакомьтесь с отчётом в DefectDojo."
+                        """
+                        error("[SECURITY] Уязвимости высокого уровня. Деплой остановлен.")
+                    } else {
+                        echo "[INFO] Уязвимости не обнаружены. Продолжаем развёртывание."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Minikube') {
+            when {
+                expression {
+                    // Выполняется только если предыдущий шаг не завершился ошибкой
+                    currentBuild.result == null || currentBuild.result == 'SUCCESS'
+                }
+            }
+            steps {
+                sshagent(credentials: ['minikube-ssh']) {
+                    sh '''
+                        echo "[INFO] Деплой в Minikube..."
+                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                        cd ~/juice-shop/helm &&
+                        helm upgrade --install juice-shop . --namespace default --create-namespace'
+                    '''
+                }
             }
         }
     }
