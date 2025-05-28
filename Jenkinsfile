@@ -37,12 +37,12 @@ pipeline {
                     }
                 }
             }
-        } 
-        
+        }
+
         stage('Build Juice Shop Image') {
             steps {
                 sh '''
-                    echo "[INFO] Сборка Docker-образа Juice Shop..."
+                    echo "[INFO] Сборка Docker-образа..."
                     docker build -t $IMAGE_NAME:$IMAGE_TAG .
                 '''
             }
@@ -73,7 +73,7 @@ pipeline {
             steps {
                 withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
                     sh '''
-                        echo "[INFO] Обновление тега в Helm values.yaml..."
+                        echo "[INFO] Обновление Helm values.yaml..."
                         git config user.email "nazivaevaleksey8983@gmail.com"
                         git config user.name "Hulumulu-alt"
 
@@ -91,7 +91,7 @@ pipeline {
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
-                        echo "[INFO] Деплой для тестов OWASP ZAP"
+                        echo "[INFO] Тестовый деплой Juice Shop..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
                         helm upgrade --install juice-shop . --namespace juice-scan-ns --create-namespace'
@@ -100,71 +100,77 @@ pipeline {
             }
         }
 
-      stage('OWASP ZAP Scan') {
-    steps {
-        sh '''
-            echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
-            cd /var/lib/jenkins/zap-scan
-            chmod +x zap-scan.sh
-            ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой или нашёл уязвимости"
+        stage('OWASP ZAP Scan') {
+            steps {
+                script {
+                    sh '''
+                        echo "[INFO] Запуск OWASP ZAP..."
+                        cd /var/lib/jenkins/zap-scan
+                        chmod +x zap-scan.sh
+                        ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой"
 
-            echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
-            mkdir -p ${WORKSPACE}/zap-report
-            cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-            cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-            cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
+                        echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
+                        mkdir -p ${WORKSPACE}/zap-report
+                        cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+                        cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+                        cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
-            echo "[INFO] Проверка на уязвимости уровня High в XML-отчёте..."
-            HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='High (Medium)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
+                        echo "[INFO] Поиск High-уязвимостей..."
+                        HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='High (Medium)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
+                        echo "$HIGH_COUNT" > high_count.txt
 
-            echo "[INFO] Найдено уязвимостей уровня High: $HIGH_COUNT"
+                        if [ "$HIGH_COUNT" -gt 0 ]; then
+                            echo "[ALERT] Найдены High-уязвимости: $HIGH_COUNT"
+                            echo "true" > has_high.txt
+                            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                                -d chat_id=$TELEGRAM_CHAT_ID \
+                                -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT High-уязвимост(ей). Развёртывание отменено."
+                        else
+                            echo "[SUCCESS] High-уязвимости не обнаружены."
+                            echo "false" > has_high.txt
+                            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                                -d chat_id=$TELEGRAM_CHAT_ID \
+                                -d text="✅ OWASP ZAP завершён. High-уязвимостей не найдено."
 
-            if [ "$HIGH_COUNT" -gt 0 ]; then
-                echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем пайплайн..."
-                curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                    -d chat_id=$TELEGRAM_CHAT_ID \
-                    -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT уязвимост(ей) уровня High. Развёртывание отменено."
-                exit 1
-            else
-                echo "[SUCCESS] Сканирование завершено успешно. High-уязвимости не найдены."
-                curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                    -d chat_id=$TELEGRAM_CHAT_ID \
-                    -d text="✅ Сканирование OWASP ZAP завершено. Уязвимости уровня High не обнаружены."
+                            echo "[INFO] Удаление juice-scan-ns..."
+                            ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                                kubectl delete namespace juice-scan-ns --ignore-not-found
+                            '
+                        fi
+                    '''
+                    env.HAS_HIGH_VULNS = readFile('has_high.txt').trim()
+                }
+            }
+        }
 
-                echo "[INFO] Удаление временного namespace juice-scan-ns..."
-                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                    kubectl delete namespace juice-scan-ns --ignore-not-found
-                '
-            fi
-        '''
-    }
-}
+        stage('Upload to DefectDojo') {
+            steps {
+                sh '''
+                    echo "[INFO] Загрузка отчета в DefectDojo..."
+                    curl -X POST http://localhost:8085/api/v2/import-scan/ \
+                        -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+                        -F "scan_type=ZAP Scan" \
+                        -F "minimum_severity=Low" \
+                        -F "engagement=1" \
+                        -F "lead=1" \
+                        -F "file=@zap-report/zap-report.xml"
+                '''
+            }
+        }
 
- stage('Deploy to Minikube') {
+        stage('Deploy to Minikube') {
+            when {
+                expression { return env.HAS_HIGH_VULNS == 'false' }
+            }
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
-                        echo "[INFO] Деплой в кластер Minikube..."
+                        echo "[INFO] Продакшен-деплой Juice Shop..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
                         helm upgrade --install juice-shop . --namespace default --create-namespace'
                     '''
                 }
-            }
-        }
-        
-        stage('Upload to DefectDojo') {
-            steps {
-                sh '''
-                    echo "[INFO] Отправка отчета OWASP ZAP в DefectDojo..."
-                    curl -X POST http://localhost:8085/api/v2/import-scan/ \
-                      -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-                      -F "scan_type=ZAP Scan" \
-                      -F "minimum_severity=Low" \
-                      -F "engagement=1" \
-                      -F "lead=1" \
-                      -F "file=@zap-report/zap-report.xml"
-                '''
             }
         }
 
