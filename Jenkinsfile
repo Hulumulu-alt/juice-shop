@@ -114,13 +114,23 @@ pipeline {
             cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
             cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
-            echo "[INFO] Проверка на уязвимости уровня High..."
-            if grep -q '"riskdesc": "High"' "${WORKSPACE}/zap-report/zap-report.json"; then
+            echo "[INFO] Проверка на уязвимости уровня High в XML-отчёте..."
+
+            HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='High (Medium)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
+
+            echo "[INFO] Найдено уязвимостей уровня High: $HIGH_COUNT"
+
+            if [ "$HIGH_COUNT" -gt 0 ]; then
                 echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем пайплайн..."
                 curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
                   -d chat_id=$TELEGRAM_CHAT_ID \
-                  -d text="❌ OWASP ZAP нашёл уязвимости уровня High. Развёртывание отменено."
+                  -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT уязвимост(ей) уровня High. Развёртывание отменено."
                 exit 1
+            else
+                echo "[SUCCESS] Сканирование завершено успешно. High-уязвимости не найдены."
+                curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                  -d chat_id=$TELEGRAM_CHAT_ID \
+                  -d text="✅ Сканирование OWASP ZAP завершено. Уязвимости уровня High не обнаружены."
             fi
         '''
     }
