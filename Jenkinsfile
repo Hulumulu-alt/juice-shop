@@ -81,7 +81,7 @@ pipeline {
             }
         }
 
-       stage('OWASP ZAP Scan') {
+      stage('OWASP ZAP Scan') {
     steps {
         sh '''
             echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
@@ -96,7 +96,6 @@ pipeline {
             cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
             echo "[INFO] Проверка на уязвимости уровня High в XML-отчёте..."
-
             HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='High (Medium)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
 
             echo "[INFO] Найдено уязвимостей уровня High: $HIGH_COUNT"
@@ -104,14 +103,19 @@ pipeline {
             if [ "$HIGH_COUNT" -gt 0 ]; then
                 echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем пайплайн..."
                 curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                  -d chat_id=$TELEGRAM_CHAT_ID \
-                  -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT уязвимост(ей) уровня High. Развёртывание отменено."
+                    -d chat_id=$TELEGRAM_CHAT_ID \
+                    -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT уязвимост(ей) уровня High. Развёртывание отменено."
                 exit 1
             else
                 echo "[SUCCESS] Сканирование завершено успешно. High-уязвимости не найдены."
                 curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                  -d chat_id=$TELEGRAM_CHAT_ID \
-                  -d text="✅ Сканирование OWASP ZAP завершено. Уязвимости уровня High не обнаружены."
+                    -d chat_id=$TELEGRAM_CHAT_ID \
+                    -d text="✅ Сканирование OWASP ZAP завершено. Уязвимости уровня High не обнаружены."
+
+                echo "[INFO] Удаление временного namespace juice-scan-ns..."
+                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                    kubectl delete namespace juice-scan-ns --ignore-not-found
+                '
             fi
         '''
     }
