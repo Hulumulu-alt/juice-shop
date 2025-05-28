@@ -2,17 +2,17 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: juice-shop
+  name: {{ include "juice-shop.fullname" . }}
 spec:
   rules:
-    - host: juice-shop.local
+    - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: juice-shop
+                name: {{ include "juice-shop.fullname" . }}
                 port:
                   number: 80
 {{- end }}
