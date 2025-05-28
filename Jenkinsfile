@@ -1,179 +1,184 @@
-pipeline { agent any
+pipeline {
+    agent any
 
-environment {
-    SONARQUBE_SERVER = 'SonarQube'
-    SONAR_TOKEN = credentials('sonarqube-token')
-    IMAGE_NAME = 'nazyvaevdocker/juice-shop'
-    IMAGE_TAG = "${BUILD_NUMBER}"
-    DEFECTDOJO_TOKEN = credentials('defectdojo-token')
-    TELEGRAM_TOKEN = credentials('telegram-bot-token')
-    TELEGRAM_CHAT_ID = credentials('telegram-chat-id')
-}
-
-stages {
-    stage('Checkout') {
-        steps {
-            deleteDir()
-            checkout scm
-        }
+    environment {
+        SONARQUBE_SERVER = 'SonarQube'
+        SONAR_TOKEN = credentials('sonarqube-token')
+        IMAGE_NAME = 'nazyvaevdocker/juice-shop'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        DEFECTDOJO_TOKEN = credentials('defectdojo-token')
+        TELEGRAM_TOKEN = credentials('telegram-bot-token')
+        TELEGRAM_CHAT_ID = credentials('telegram-chat-id')
     }
 
-    stage('SonarQube Analysis') {
-        steps {
-            script {
-                withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                    sh '''
-                        echo "[INFO] Установка зависимостей..."
-                        npm install --legacy-peer-deps
+    stages {
+        stage('Checkout') {
+            steps {
+                deleteDir()
+                checkout scm
+            }
+        }
 
-                        echo "[INFO] Запуск анализа SonarQube..."
-                        npx sonar-scanner \
-                            -Dsonar.projectKey=juice-shop \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=http://localhost:9000 \
-                            -Dsonar.login=${SONAR_TOKEN}
-                    '''
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
+                        sh '''
+                            echo "[INFO] Установка зависимостей..."
+                            npm install --legacy-peer-deps
+
+                            echo "[INFO] Запуск анализа SonarQube..."
+                            npx sonar-scanner \
+                                -Dsonar.projectKey=juice-shop \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=http://localhost:9000 \
+                                -Dsonar.login=${SONAR_TOKEN}
+                        '''
+                    }
                 }
             }
         }
-    }
 
-    stage('Build Juice Shop Image') {
-        steps {
-            sh '''
-                echo "[INFO] Сборка Docker-образа Juice Shop..."
-                docker build -t $IMAGE_NAME:$IMAGE_TAG .
-            '''
-        }
-    }
-
-    stage('Push Docker Image') {
-        environment {
-            REGISTRY_CREDENTIALS = credentials('dockerhub-credentials')
-        }
-        steps {
-            script {
-                docker.withRegistry('https://index.docker.io/v1/', "dockerhub-credentials") {
-                    sh '''
-                        docker push $IMAGE_NAME:$IMAGE_TAG
-                        docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
-                        docker push $IMAGE_NAME:latest
-                    '''
-                }
-            }
-        }
-    }
-
-    stage('Update Helm Tag') {
-        environment {
-            GIT_REPO_NAME = "juice-shop"
-            GIT_USER_NAME = "Hulumulu-alt"
-        }
-        steps {
-            withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
+        stage('Build Juice Shop Image') {
+            steps {
                 sh '''
-                    echo "[INFO] Обновление тега в Helm values.yaml..."
-                    git config user.email "nazivaevaleksey8983@gmail.com"
-                    git config user.name "Hulumulu-alt"
-
-                    sed -i "s/replaceJuiceTag/${BUILD_NUMBER}/g" helm/values.yaml || true
-
-                    git add helm/values.yaml
-                    git commit -m "Обновление тега Docker-образа на ${BUILD_NUMBER}" || true
-                    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:master
+                    echo "[INFO] Сборка Docker-образа Juice Shop..."
+                    docker build -t $IMAGE_NAME:$IMAGE_TAG .
                 '''
             }
         }
-    }
 
-stage('Deploy to Temporary Namespace') {
-    steps {
-        sshagent(credentials: ['minikube-ssh']) {
-            sh '''
-                echo "[INFO] Деплой в тестовый namespace juice-scan-ns..."
-                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                    kubectl delete namespace juice-scan-ns --ignore-not-found
-                    kubectl create namespace juice-scan-ns
-                    cd ~/juice-shop/helm &&
-                    helm upgrade --install juice-shop . \
-                      --namespace juice-scan-ns \
-                      --set ingress.host=juice-scan.local
-                '
-            '''
+        stage('Push Docker Image') {
+            environment {
+                REGISTRY_CREDENTIALS = credentials('dockerhub-credentials')
+            }
+            steps {
+                script {
+                    docker.withRegistry('https://index.docker.io/v1/', "dockerhub-credentials") {
+                        sh '''
+                            docker push $IMAGE_NAME:$IMAGE_TAG
+                            docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
+                            docker push $IMAGE_NAME:latest
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Update Helm Tag') {
+            environment {
+                GIT_REPO_NAME = "juice-shop"
+                GIT_USER_NAME = "Hulumulu-alt"
+            }
+            steps {
+                withCredentials([string(credentialsId: 'github-credentials-juice', variable: 'GITHUB_TOKEN')]) {
+                    sh '''
+                        echo "[INFO] Обновление тега в Helm values.yaml..."
+                        git config user.email "nazivaevaleksey8983@gmail.com"
+                        git config user.name "Hulumulu-alt"
+
+                        sed -i "s/replaceJuiceTag/${BUILD_NUMBER}/g" helm/values.yaml || true
+
+                        git add helm/values.yaml
+                        git commit -m "Обновление тега Docker-образа на ${BUILD_NUMBER}" || true
+                        git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:master
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Temporary Namespace') {
+            steps {
+                sshagent(credentials: ['minikube-ssh']) {
+                    sh '''
+                        echo "[INFO] Деплой в тестовый namespace juice-scan-ns..."
+                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                            kubectl delete namespace juice-scan-ns --ignore-not-found
+                            kubectl create namespace juice-scan-ns
+                            cd ~/juice-shop/helm &&
+                            helm upgrade --install juice-shop . \
+                              --namespace juice-scan-ns \
+                              --set ingress.host=juice-scan.local
+                        '
+                    '''
+                }
+            }
+        }
+
+        stage('OWASP ZAP Scan') {
+            steps {
+                sh '''
+                    echo "[INFO] Запуск сканирования OWASP ZAP..."
+                    cd /var/lib/jenkins/zap-scan
+                    chmod +x zap-scan.sh
+                    ./zap-scan.sh
+
+                    echo "[INFO] Копирование ZAP-отчетов..."
+                    mkdir -p ${WORKSPACE}/zap-report
+                    cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+                    cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+                    cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
+                '''
+            }
+        }
+
+        stage('Check High Vulnerabilities and Notify') {
+            steps {
+                script {
+                    def report = readFile('zap-report/zap-report.json')
+                    if (report.contains('"riskdesc": "High"')) {
+                        echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем пайплайн."
+
+                        sh '''
+                            curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
+                              -d chat_id=${TELEGRAM_CHAT_ID} \
+                              -d text="❌ OWASP ZAP нашёл уязвимости уровня High. Развёртывание отменено."
+                        '''
+                        error("High severity vulnerabilities detected.")
+                    } else {
+                        echo "[INFO] Уязвимостей уровня High не обнаружено."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Production') {
+            steps {
+                sshagent(credentials: ['minikube-ssh']) {
+                    sh '''
+                        echo "[INFO] Развёртывание в production namespace..."
+                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                            cd ~/juice-shop/helm &&
+                            helm upgrade --install juice-shop . \
+                              --namespace default \
+                              --set ingress.host=juice-shop.local
+                        '
+                    '''
+                }
+            }
+        }
+
+        stage('Upload to DefectDojo') {
+            steps {
+                sh '''
+                    echo "[INFO] Отправка отчета OWASP ZAP в DefectDojo..."
+                    curl -X POST http://localhost:8085/api/v2/import-scan/ \
+                      -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+                      -F "scan_type=ZAP Scan" \
+                      -F "minimum_severity=Low" \
+                      -F "engagement=1" \
+                      -F "lead=1" \
+                      -F "file=@zap-report/zap-report.xml"
+                '''
+            }
+        }
+
+        stage('Archive ZAP Reports') {
+            steps {
+                archiveArtifacts artifacts: 'zap-report/zap_report.html', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'zap-report/zap-report.xml', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'zap-report/zap-report.json', allowEmptyArchive: true
+            }
         }
     }
-}
-    stage('OWASP ZAP Scan') {
-    steps {
-        sh '''
-            echo "[INFO] Запуск сканирования OWASP ZAP..."
-            cd /var/lib/jenkins/zap-scan
-            chmod +x zap-scan.sh
-            ./zap-scan.sh
-
-            echo "[INFO] Копирование ZAP-отчетов..."
-            mkdir -p ${WORKSPACE}/zap-report
-            cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-            cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-            cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
-
-            echo "[INFO] Проверка на уязвимости уровня High..."
-            if [ $(jq '[.site[].alerts[] | select(.risk == "High")] | length' reports/zap-report.json) -gt 0 ]; then
-                echo "[ALERT] Обнаружены уязвимости уровня High"
-                curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
-                  -d chat_id=${TELEGRAM_CHAT_ID} \
-                  -d text="❌ OWASP ZAP обнаружил уязвимости уровня High. Развёртывание отменено."
-                exit 1
-            else
-                echo "[INFO] Уязвимостей уровня High не обнаружено."
-            fi
-        '''
-    }
-}
-    stage('Deploy to Production') {
-    when {
-        expression {
-            return !fileExists('zap-report/zap-report.json') ||
-                   !readFile('zap-report/zap-report.json').contains('"riskdesc": "High"')
-        }
-    }
-    steps {
-        sshagent(credentials: ['minikube-ssh']) {
-            sh '''
-                echo "[INFO] Развёртывание в production namespace..."
-                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                    cd ~/juice-shop/helm &&
-                    helm upgrade --install juice-shop . \
-                      --namespace default \
-                      --set ingress.host=juice-shop.local
-                '
-            '''
-        }
-    }
-}
-
-    stage('Upload to DefectDojo') {
-        steps {
-            sh '''
-                echo "[INFO] Отправка отчета OWASP ZAP в DefectDojo..."
-                curl -X POST http://localhost:8085/api/v2/import-scan/ \
-                  -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-                  -F "scan_type=ZAP Scan" \
-                  -F "minimum_severity=Low" \
-                  -F "engagement=1" \
-                  -F "lead=1" \
-                  -F "file=@zap-report/zap-report.xml"
-            '''
-        }
-    }
-
-    stage('Archive ZAP Reports') {
-        steps {
-            archiveArtifacts artifacts: 'zap-report/zap_report.html', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'zap-report/zap-report.xml', allowEmptyArchive: true
-            archiveArtifacts artifacts: 'zap-report/zap-report.json', allowEmptyArchive: true
-        }
-    }
-}
-
 }
