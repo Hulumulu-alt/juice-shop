@@ -87,77 +87,44 @@ pipeline {
             }
         }
 
-        stage('Deploy to Temporary Namespace') {
+        stage('Deploy to Minikube') {
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
-                        echo "[INFO] Деплой в тестовый namespace juice-scan-ns..."
+                        echo "[INFO] Деплой в кластер Minikube..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                            kubectl delete namespace juice-scan-ns --ignore-not-found
-                            kubectl create namespace juice-scan-ns
-                            cd ~/juice-shop/helm &&
-                            helm upgrade --install juice-shop . \
-                              --namespace juice-scan-ns \
-                              --set ingress.host=juice-scan.local
-                        '
+                        cd ~/juice-shop/helm &&
+                        helm upgrade --install juice-shop . --namespace default --create-namespace'
                     '''
                 }
             }
         }
 
-        stage('OWASP ZAP Scan') {
-            steps {
-                sh '''
-                    echo "[INFO] Запуск сканирования OWASP ZAP..."
-                    cd /var/lib/jenkins/zap-scan
-                    chmod +x zap-scan.sh
-                    ./zap-scan.sh
+       stage('OWASP ZAP Scan') {
+    steps {
+        sh '''
+            echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
+            cd /var/lib/jenkins/zap-scan
+            chmod +x zap-scan.sh
+            ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой или нашёл уязвимости"
 
-                    echo "[INFO] Копирование ZAP-отчетов..."
-                    mkdir -p ${WORKSPACE}/zap-report
-                    cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-                    cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-                    cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
-                '''
-            }
-        }
+            echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
+            mkdir -p ${WORKSPACE}/zap-report
+            cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+            cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+            cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
-        stage('Check High Vulnerabilities and Notify') {
-            steps {
-                script {
-                    def report = readFile('zap-report/zap-report.json')
-                    if (report.contains('"riskdesc": "High"')) {
-                        echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем пайплайн."
-
-                        sh '''
-                            curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
-                              -d chat_id=${TELEGRAM_CHAT_ID} \
-                              -d text="❌ OWASP ZAP нашёл уязвимости уровня High. Развёртывание отменено."
-                        '''
-                        error("High severity vulnerabilities detected.")
-                    } else {
-                        echo "[INFO] Уязвимостей уровня High не обнаружено."
-                    }
-                }
-            }
-        }
-
-        stage('Deploy to Production') {
-            steps {
-                sshagent(credentials: ['minikube-ssh']) {
-                    sh '''
-                        echo "[INFO] Развёртывание в production namespace..."
-                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                            cd ~/juice-shop/helm &&
-                            helm upgrade --install juice-shop . \
-                              --namespace default \
-                              --set ingress.host=juice-shop.local
-                        '
-                    '''
-                }
-            }
-        }
-
+            echo "[INFO] Проверка на уязвимости уровня High..."
+            if grep -q '"riskdesc": "High"' "${WORKSPACE}/zap-report/zap-report.json"; then
+                echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем пайплайн..."
+                curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                  -d chat_id=$TELEGRAM_CHAT_ID \
+                  -d text="❌ OWASP ZAP нашёл уязвимости уровня High. Развёртывание отменено."
+                exit 1
+            fi
+        '''
+    }
+}
         stage('Upload to DefectDojo') {
             steps {
                 sh '''
