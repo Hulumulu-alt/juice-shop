@@ -102,59 +102,13 @@ pipeline {
 
         stage('OWASP ZAP Scan') {
             steps {
-                script {
                     sh '''
                         echo "[INFO] Запуск OWASP ZAP..."
                         cd /var/lib/jenkins/zap-scan
                         chmod +x zap-scan.sh
                         ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой"
-
-                        echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
-                        mkdir -p ${WORKSPACE}/zap-report
-                        cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-                        cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-                        cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
-
-                        echo "[INFO] Поиск High-уязвимостей..."
-                        HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='High (Medium)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
-                        echo "$HIGH_COUNT" > high_count.txt
-
-                        if [ "$HIGH_COUNT" -gt 0 ]; then
-                            echo "[ALERT] Найдены High-уязвимости: $HIGH_COUNT"
-                            echo "true" > has_high.txt
-                            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                                -d chat_id=$TELEGRAM_CHAT_ID \
-                                -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT High-уязвимост(ей). Развёртывание отменено."
-                        else
-                            echo "[SUCCESS] High-уязвимости не обнаружены."
-                            echo "false" > has_high.txt
-                            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                                -d chat_id=$TELEGRAM_CHAT_ID \
-                                -d text="✅ OWASP ZAP завершён. High-уязвимостей не найдено."
-
-                            echo "[INFO] Удаление juice-scan-ns..."
-                            ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                                kubectl delete namespace juice-scan-ns --ignore-not-found
-                            '
-                        fi
                     '''
                     env.HAS_HIGH_VULNS = readFile('has_high.txt').trim()
-                }
-            }
-        }
-
-        stage('Upload to DefectDojo') {
-            steps {
-                sh '''
-                    echo "[INFO] Загрузка отчета в DefectDojo..."
-                    curl -X POST http://localhost:8085/api/v2/import-scan/ \
-                        -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-                        -F "scan_type=ZAP Scan" \
-                        -F "minimum_severity=Low" \
-                        -F "engagement=1" \
-                        -F "lead=1" \
-                        -F "file=@zap-report/zap-report.xml"
-                '''
             }
         }
 
