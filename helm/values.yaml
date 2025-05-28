@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: nazyvaevdocker/juice-shop
-  tag: 42
+  tag: latest
   pullPolicy: IfNotPresent
 
 service:
@@ -16,7 +16,7 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: replaceIngressHost
+    - host: juice-shop.local
       paths:
         - path: /
           pathType: Prefix
