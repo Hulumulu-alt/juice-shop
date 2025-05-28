@@ -5,7 +5,7 @@ metadata:
   name: juice-shop
 spec:
   rules:
-    - host: juice-shop.local
+    - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
           - path: /
