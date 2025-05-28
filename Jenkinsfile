@@ -19,25 +19,6 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
-            steps {
-                script {
-                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                        sh '''
-                            echo "[INFO] Установка зависимостей..."
-                            npm install --legacy-peer-deps
-
-                            echo "[INFO] Запуск анализа SonarQube..."
-                            npx sonar-scanner \
-                                -Dsonar.projectKey=juice-shop \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=http://localhost:9000 \
-                                -Dsonar.login=${SONAR_TOKEN}
-                        '''
-                    }
-                }
-            }
-        }
 
         stage('Build Juice Shop Image') {
             steps {
@@ -87,14 +68,14 @@ pipeline {
             }
         }
 
-        stage('Deploy to Minikube') {
+        stage('Deploy to Test') {
             steps {
                 sshagent(credentials: ['minikube-ssh']) {
                     sh '''
-                        echo "[INFO] Деплой в кластер Minikube..."
+                        echo "[INFO] Деплой для тестов OWASP ZAP"
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . --namespace default --create-namespace'
+                        helm upgrade --install juice-shop . --namespace juice-scan-ns --create-namespace'
                     '''
                 }
             }
@@ -135,6 +116,20 @@ pipeline {
         '''
     }
 }
+
+ stage('Deploy to Minikube') {
+            steps {
+                sshagent(credentials: ['minikube-ssh']) {
+                    sh '''
+                        echo "[INFO] Деплой в кластер Minikube..."
+                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                        cd ~/juice-shop/helm &&
+                        helm upgrade --install juice-shop . --namespace default --create-namespace'
+                    '''
+                }
+            }
+        }
+        
         stage('Upload to DefectDojo') {
             steps {
                 sh '''
