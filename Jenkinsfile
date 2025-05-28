@@ -158,7 +158,7 @@ pipeline {
             }
         }
 
-        stage('Deploy to Minikube') {
+        stage('Deploy to Prodaction') {
             when {
                 expression { return env.HAS_HIGH_VULNS == 'false' }
             }
