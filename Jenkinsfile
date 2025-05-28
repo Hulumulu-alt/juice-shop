@@ -86,20 +86,23 @@ stages {
         }
     }
 
-    stage('Deploy to Temporary Namespace') {
-        steps {
-            sshagent(credentials: ['minikube-ssh']) {
-                sh '''
-                    echo "[INFO] Деплой в тестовый namespace juice-scan-ns..."
-                    ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+stage('Deploy to Temporary Namespace') {
+    steps {
+        sshagent(credentials: ['minikube-ssh']) {
+            sh '''
+                echo "[INFO] Деплой в тестовый namespace juice-scan-ns..."
+                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                     kubectl delete namespace juice-scan-ns --ignore-not-found
                     kubectl create namespace juice-scan-ns
                     cd ~/juice-shop/helm &&
-                    helm upgrade --install juice-shop . --namespace juice-scan-ns'
-                '''
-            }
+                    helm upgrade --install juice-shop . \
+                      --namespace juice-scan-ns \
+                      --set ingress.host=juice-scan.local
+                '
+            '''
         }
     }
+}
     stage('OWASP ZAP Scan') {
     steps {
         sh '''
@@ -128,17 +131,26 @@ stages {
     }
 }
     stage('Deploy to Production') {
-        steps {
-            sshagent(credentials: ['minikube-ssh']) {
-                sh '''
-                    echo "[INFO] Деплой в production namespace..."
-                    ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                    cd ~/juice-shop/helm &&
-                    helm upgrade --install juice-shop . --namespace default --create-namespace'
-                '''
-            }
+    when {
+        expression {
+            return !fileExists('zap-report/zap-report.json') ||
+                   !readFile('zap-report/zap-report.json').contains('"riskdesc": "High"')
         }
     }
+    steps {
+        sshagent(credentials: ['minikube-ssh']) {
+            sh '''
+                echo "[INFO] Развёртывание в production namespace..."
+                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                    cd ~/juice-shop/helm &&
+                    helm upgrade --install juice-shop . \
+                      --namespace default \
+                      --set ingress.host=juice-shop.local
+                '
+            '''
+        }
+    }
+}
 
     stage('Upload to DefectDojo') {
         steps {
