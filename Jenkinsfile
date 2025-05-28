@@ -101,42 +101,32 @@ stages {
         }
     }
     stage('OWASP ZAP Scan') {
-        steps {
-            sh '''
-                echo "[INFO] Запуск сканирования OWASP ZAP (локально)..."
-                cd /var/lib/jenkins/zap-scan
-                chmod +x zap-scan.sh
-                ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой или нашёл уязвимости"
+    steps {
+        sh '''
+            echo "[INFO] Запуск сканирования OWASP ZAP..."
+            cd /var/lib/jenkins/zap-scan
+            chmod +x zap-scan.sh
+            ./zap-scan.sh
 
-                echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
-                mkdir -p ${WORKSPACE}/zap-report
-                cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-                cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-                cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
-            '''
-        }
+            echo "[INFO] Копирование ZAP-отчетов..."
+            mkdir -p ${WORKSPACE}/zap-report
+            cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+            cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+            cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
+
+            echo "[INFO] Проверка на уязвимости уровня High..."
+            if [ $(jq '[.site[].alerts[] | select(.risk == "High")] | length' reports/zap-report.json) -gt 0 ]; then
+                echo "[ALERT] Обнаружены уязвимости уровня High"
+                curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
+                  -d chat_id=${TELEGRAM_CHAT_ID} \
+                  -d text="❌ OWASP ZAP обнаружил уязвимости уровня High. Развёртывание отменено."
+                exit 1
+            else
+                echo "[INFO] Уязвимостей уровня High не обнаружено."
+            fi
+        '''
     }
-
-    stage('Check High Vulnerabilities and Notify') {
-        steps {
-            script {
-                def reportJson = readFile(file: 'zap-report/zap-report.json')
-                def report = new groovy.json.JsonSlurper().parseText(reportJson)
-                def hasHigh = report.findAll { it.riskdesc == 'High' }.size() > 0
-
-                if (hasHigh) {
-                    echo "[ALERT] Обнаружены уязвимости уровня High. Прерываем деплой в прод."
-                    sh '''
-                        curl -s -X POST https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage \
-                          -d chat_id=${TELEGRAM_CHAT_ID} \
-                          -d text="❌ OWASP ZAP нашёл уязвимости уровня High. Развёртывание в production отменено."
-                    '''
-                    error("High severity vulnerabilities detected. Stopping pipeline.")
-                }
-            }
-        }
-    }
-
+}
     stage('Deploy to Production') {
         steps {
             sshagent(credentials: ['minikube-ssh']) {
