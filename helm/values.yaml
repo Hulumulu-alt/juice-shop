@@ -15,8 +15,9 @@ ingress:
   enabled: true
   className: ""
   annotations: {}
+  host: juice-shop.local
   hosts:
-    - host: juice-shop.local
+    - host: "{{ .Values.ingress.host }}"
       paths:
         - path: /
           pathType: Prefix
