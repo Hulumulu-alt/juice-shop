@@ -101,39 +101,41 @@ pipeline {
         }
 
         stage('OWASP ZAP Scan') {
-            steps {
-                script {
-                    sh '''
-                        echo "[INFO] Запуск OWASP ZAP..."
-                        cd /var/lib/jenkins/zap-scan
-                        chmod +x zap-scan.sh
-                        ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой"
-                        
-                        echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
-                        mkdir -p ${WORKSPACE}/zap-report
-                        cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
-                        cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
-                        cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
+    steps {
+        script {
+            sh '''
+                echo "[INFO] Запуск OWASP ZAP..."
+                cd /var/lib/jenkins/zap-scan
+                chmod +x zap-scan.sh
+                ./zap-scan.sh || echo "[WARN] ZAP завершился с ошибкой"
 
-                        echo "[INFO] Анализ отчёта на High-уязвимости..."
-                        HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='Critical (High)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
+                echo "[INFO] Копирование ZAP-отчётов в рабочую директорию Jenkins..."
+                mkdir -p ${WORKSPACE}/zap-report
+                cp -v reports/zap_report.html ${WORKSPACE}/zap-report/ || true
+                cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
+                cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
-                        if [ "$HIGH_COUNT" -gt 0 ]; then
-                            echo "true" > has_high.txt
-                            echo "[ALERT] Найдены High-уязвимости: $HIGH_COUNT"
-                            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                                -d chat_id=$TELEGRAM_CHAT_ID \
-                                -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT High-уязвимост(ей). Развёртывание отменено."
-                        else
-                            echo "false" > has_high.txt
-                            echo "[SUCCESS] High-уязвимости не обнаружены."
-                            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                                -d chat_id=$TELEGRAM_CHAT_ID \
-                                -d text="✅ OWASP ZAP завершён. High-уязвимостей не найдено."
-                        fi
-                    '''
-                }
-            }
+                echo "[INFO] Анализ отчёта на High-уязвимости..."
+                HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='Critical (High)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
+
+                echo "[INFO] Найдено уязвимостей уровня High: $HIGH_COUNT"
+
+                if [ "$HIGH_COUNT" -gt 0 ]; then
+                    echo "true" > ${WORKSPACE}/has_high.txt
+                    echo "[ALERT] Найдены High-уязвимости: $HIGH_COUNT"
+                    curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                        -d chat_id=$TELEGRAM_CHAT_ID \
+                        -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT High-уязвимост(ей). Развёртывание отменено."
+                else
+                    echo "false" > ${WORKSPACE}/has_high.txt
+                    echo "[SUCCESS] High-уязвимости не обнаружены."
+                    curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                        -d chat_id=$TELEGRAM_CHAT_ID \
+                        -d text="✅ OWASP ZAP завершён. High-уязвимостей не найдено."
+                fi
+            '''
+        }
+    }
        
             post {
                 always {
