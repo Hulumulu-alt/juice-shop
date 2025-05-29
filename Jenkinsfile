@@ -131,11 +131,6 @@ pipeline {
                             curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
                                 -d chat_id=$TELEGRAM_CHAT_ID \
                                 -d text="✅ OWASP ZAP завершён. High-уязвимостей не найдено."
-
-                            echo "[INFO] Удаление juice-scan-ns..."
-                            ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                                kubectl delete namespace juice-scan-ns --ignore-not-found
-                            '
                         fi
                     '''
                 }
@@ -143,6 +138,13 @@ pipeline {
        
             post {
                 always {
+                    sshagent(credentials: ['minikube-ssh']) {
+                        sh '''
+                            echo "[INFO] Удаление juice-scan-ns..."
+                            ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                                kubectl delete namespace juice-scan-ns --ignore-not-found'
+                        '''    
+                    }
                     sh '''
             echo "[INFO] Загрузка отчета OWASP ZAP в DefectDojo..."
             if [ -f zap-report/zap-report.xml ]; then
@@ -179,7 +181,10 @@ pipeline {
 
         stage('Deploy to Minikube') {
     when {
-        expression { return readFile('has_high.txt').trim() == 'false' }
+        expression { 
+            sh(script: 'touch has_high.txt', returnStatus: true)
+            return readFile('has_high.txt').trim() == 'false'
+        }
     }
     steps {
         sshagent(credentials: ['minikube-ssh']) {
