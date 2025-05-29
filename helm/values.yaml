@@ -16,7 +16,7 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: juice-shop.local
+    - host: replaceMe.local
       paths:
         - path: /
           pathType: Prefix
