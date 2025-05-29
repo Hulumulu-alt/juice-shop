@@ -141,22 +141,42 @@ pipeline {
                     env.HAS_HIGH_VULNS = readFile('has_high.txt').trim()
                 }
             }
-        }
+       
+            post {
+                always {
+                    sh '''
+            echo "[INFO] Загрузка отчета OWASP ZAP в DefectDojo..."
+            if [ -f zap-report/zap-report.xml ]; then
+                RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/dd_response.txt -X POST http://localhost:8085/api/v2/import-scan/ \
+                    -H "Authorization: Token $DEFECTDOJO_TOKEN" \
+                    -F "scan_type=ZAP Scan" \
+                    -F "minimum_severity=Low" \
+                    -F "engagement=1" \
+                    -F "lead=1" \
+                    -F "file=@zap-report/zap-report.xml")
 
-        stage('Upload to DefectDojo') {
-            steps {
-                sh '''
-                    echo "[INFO] Загрузка отчета в DefectDojo..."
-                    curl -X POST http://localhost:8085/api/v2/import-scan/ \
-                        -H "Authorization: Token $DEFECTDOJO_TOKEN" \
-                        -F "scan_type=ZAP Scan" \
-                        -F "minimum_severity=Low" \
-                        -F "engagement=1" \
-                        -F "lead=1" \
-                        -F "file=@zap-report/zap-report.xml"
-                '''
-            }
-        }
+                if [ "$RESPONSE" -eq 201 ]; then
+                    echo "[SUCCESS] Отчёт успешно загружен в DefectDojo."
+                    curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                      -d chat_id=$TELEGRAM_CHAT_ID \
+                      -d text="📤 OWASP ZAP отчёт успешно загружен в DefectDojo."
+                else
+                    echo "[ERROR] Не удалось загрузить отчёт в DefectDojo. HTTP $RESPONSE"
+                    ERROR_MSG=$(cat /tmp/dd_response.txt)
+                    curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                      -d chat_id=$TELEGRAM_CHAT_ID \
+                      -d text="⚠️ Ошибка загрузки OWASP ZAP отчёта в DefectDojo: HTTP $RESPONSE. Ответ: $ERROR_MSG"
+                fi
+            else
+                echo "[WARN] Файл zap-report.xml не найден. Пропуск загрузки."
+                curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                  -d chat_id=$TELEGRAM_CHAT_ID \
+                  -d text="⚠️ ZAP отчёт не найден. Загрузка в DefectDojo пропущена."
+            fi
+        '''
+         }
+       }   
+    }
 
         stage('Deploy to Minikube') {
     when {
