@@ -115,9 +115,9 @@ pipeline {
                         cp -v reports/zap-report.xml ${WORKSPACE}/zap-report/ || true
                         cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
-                        echo "[INFO] Поиск High-уязвимостей..."
+                        echo "[INFO] Анализ отчёта на High-уязвимости..."
+                        echo "false" > has_high.txt
                         HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='Critical (High)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
-                        echo "$HIGH_COUNT" > high_count.txt
 
                         if [ "$HIGH_COUNT" -gt 0 ]; then
                             echo "[ALERT] Найдены High-уязвимости: $HIGH_COUNT"
@@ -138,7 +138,6 @@ pipeline {
                             '
                         fi
                     '''
-                    env.HAS_HIGH_VULNS = readFile('has_high.txt').trim()
                 }
             }
        
@@ -180,7 +179,7 @@ pipeline {
 
         stage('Deploy to Minikube') {
     when {
-        expression { return env.HAS_HIGH_VULNS == 'false' }
+        expression { return readFile('has_high.txt').trim() == 'false' }
     }
     steps {
         sshagent(credentials: ['minikube-ssh']) {
