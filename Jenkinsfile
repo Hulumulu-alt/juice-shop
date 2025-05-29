@@ -116,18 +116,17 @@ pipeline {
                         cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
                         echo "[INFO] Анализ отчёта на High-уязвимости..."
-                        echo "false" > has_high.txt
                         HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='Critical (High)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
 
                         if [ "$HIGH_COUNT" -gt 0 ]; then
-                            echo "[ALERT] Найдены High-уязвимости: $HIGH_COUNT"
                             echo "true" > has_high.txt
+                            echo "[ALERT] Найдены High-уязвимости: $HIGH_COUNT"
                             curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
                                 -d chat_id=$TELEGRAM_CHAT_ID \
                                 -d text="❌ OWASP ZAP обнаружил $HIGH_COUNT High-уязвимост(ей). Развёртывание отменено."
                         else
-                            echo "[SUCCESS] High-уязвимости не обнаружены."
                             echo "false" > has_high.txt
+                            echo "[SUCCESS] High-уязвимости не обнаружены."
                             curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
                                 -d chat_id=$TELEGRAM_CHAT_ID \
                                 -d text="✅ OWASP ZAP завершён. High-уязвимостей не найдено."
@@ -178,32 +177,31 @@ pipeline {
          }
        }   
     }
-
         stage('Deploy to Minikube') {
-    when {
-        expression { 
-            sh(script: 'touch has_high.txt', returnStatus: true)
-            return readFile('has_high.txt').trim() == 'false'
+            steps {
+                script {
+                    def hasHigh = readFile('has_high.txt').trim()
+                    if (hasHigh == 'false') {
+                        sshagent(credentials: ['minikube-ssh']) {
+                            sh '''
+                                echo "[INFO] Продакшен-деплой Juice Shop..."
+                                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                                cd ~/juice-shop/helm &&
+                                helm upgrade --install juice-shop . --namespace default --create-namespace'
+                            '''
+                        }
+                        sh '''
+                            echo "[INFO] Отправка Telegram-уведомления о продакшен-деплое..."
+                            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                                -d chat_id=$TELEGRAM_CHAT_ID \
+                                -d text="🚀 Juice Shop успешно развёрнут в production."
+                        '''
+                    } else {
+                        echo "[INFO] Продакшен-деплой пропущен из-за найденных High-уязвимостей."
+                    }
+                }
+            }
         }
-    }
-    steps {
-        sshagent(credentials: ['minikube-ssh']) {
-            sh '''
-                echo "[INFO] Продакшен-деплой Juice Shop..."
-                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                cd ~/juice-shop/helm &&
-                helm upgrade --install juice-shop . --namespace default --create-namespace'
-            '''
-        }
-
-        sh '''
-            echo "[INFO] Отправка Telegram-уведомления о продакшен-деплое..."
-            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
-                -d chat_id=$TELEGRAM_CHAT_ID \
-                -d text="🚀 Juice Shop успешно развёрнут в production."
-        '''
-    }
-}
 
         stage('Archive ZAP Reports') {
             steps {
