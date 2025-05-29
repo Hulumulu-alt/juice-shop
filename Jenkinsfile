@@ -159,20 +159,27 @@ pipeline {
         }
 
         stage('Deploy to Minikube') {
-            when {
-                expression { return env.HAS_HIGH_VULNS == 'false' }
-            }
-            steps {
-                sshagent(credentials: ['minikube-ssh']) {
-                    sh '''
-                        echo "[INFO] Продакшен-деплой Juice Shop..."
-                        ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
-                        cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . --namespace default --create-namespace'
-                    '''
-                }
-            }
+    when {
+        expression { return env.HAS_HIGH_VULNS == 'false' }
+    }
+    steps {
+        sshagent(credentials: ['minikube-ssh']) {
+            sh '''
+                echo "[INFO] Продакшен-деплой Juice Shop..."
+                ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
+                cd ~/juice-shop/helm &&
+                helm upgrade --install juice-shop . --namespace default --create-namespace'
+            '''
         }
+
+        sh '''
+            echo "[INFO] Отправка Telegram-уведомления о продакшен-деплое..."
+            curl -s -X POST https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage \
+                -d chat_id=$TELEGRAM_CHAT_ID \
+                -d text="🚀 Juice Shop успешно развёрнут в production."
+        '''
+    }
+}
 
         stage('Archive ZAP Reports') {
             steps {
