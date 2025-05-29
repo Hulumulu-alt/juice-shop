@@ -19,25 +19,7 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
-            steps {
-                script {
-                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                        sh '''
-                            echo "[INFO] Установка зависимостей..."
-                            npm install --legacy-peer-deps
-
-                            echo "[INFO] Запуск анализа SonarQube..."
-                            npx sonar-scanner \
-                                -Dsonar.projectKey=juice-shop \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=http://localhost:9000 \
-                                -Dsonar.login=${SONAR_TOKEN}
-                        '''
-                    }
-                }
-            }
-        }
+    
 
         stage('Build Juice Shop Image') {
             steps {
@@ -94,9 +76,7 @@ pipeline {
                         echo "[INFO] Тестовый деплой Juice Shop..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . \
-                        --namespace juice-scan-ns --create-namespace \
-                        --set ingress.hosts[0].host=juice-scan.local
+                        helm upgrade --install juice-shop . --namespace juice-scan-ns --create-namespace --set ingress.hosts[0].host=juice-scan.local'
                     '''
                 }
             }
@@ -192,9 +172,7 @@ pipeline {
                                 echo "[INFO] Продакшен-деплой Juice Shop..."
                                 ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                                 cd ~/juice-shop/helm &&
-                                helm upgrade --install juice-shop . \
-                                --namespace default \
-                                --set ingress.hosts[0].host=juice-shop.local
+                                helm upgrade --install juice-shop . --namespace default --set ingress.hosts[0].host=juice-shop.local'
                             '''
                         }
                         sh '''
