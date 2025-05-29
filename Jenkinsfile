@@ -116,7 +116,7 @@ pipeline {
                         cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
                         echo "[INFO] Поиск High-уязвимостей..."
-                        HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='High (Medium)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
+                        HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='Critical (High)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
                         echo "$HIGH_COUNT" > high_count.txt
 
                         if [ "$HIGH_COUNT" -gt 0 ]; then
