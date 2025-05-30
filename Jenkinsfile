@@ -98,7 +98,7 @@ pipeline {
                 cp -v reports/zap-report.json ${WORKSPACE}/zap-report/ || true
 
                 echo "[INFO] Анализ отчёта на High-уязвимости..."
-                HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='Critical (High)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
+                HIGH_COUNT=$(xmllint --xpath "count(//alertitem[riskdesc='High (Medium)'])" ${WORKSPACE}/zap-report/zap-report.xml || echo 0)
 
                 echo "[INFO] Найдено уязвимостей уровня High: $HIGH_COUNT"
 
