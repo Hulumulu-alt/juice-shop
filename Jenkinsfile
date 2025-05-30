@@ -76,7 +76,7 @@ pipeline {
                         echo "[INFO] Тестовый деплой Juice Shop..."
                         ssh -o StrictHostKeyChecking=no nazyvaev@192.168.56.102 '
                         cd ~/juice-shop/helm &&
-                        helm upgrade --install juice-shop . --namespace juice-scan-ns --create-namespace --set ingress.hosts[0].host=juice-scan.local'
+                        helm upgrade --install juice-shop . --namespace juice-scan-ns --create-namespace --set ingress.hosts[0].host=juice-shop.local'
                     '''
                 }
             }
