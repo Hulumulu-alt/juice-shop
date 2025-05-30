@@ -19,7 +19,25 @@ pipeline {
             }
         }
 
-    
+    stage('SonarQube Analysis') {
+            steps {
+                script {
+                    withSonarQubeEnv("${SONARQUBE_SERVER}") {
+                        sh '''
+                            echo "[INFO] Установка зависимостей..."
+                            npm install --legacy-peer-deps
+
+                            echo "[INFO] Запуск анализа SonarQube..."
+                            npx sonar-scanner \
+                                -Dsonar.projectKey=juice-shop \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=http://localhost:9000 \
+                                -Dsonar.login=${SONAR_TOKEN}
+                        '''
+                    }
+                }
+            }
+        }
 
         stage('Build Juice Shop Image') {
             steps {
